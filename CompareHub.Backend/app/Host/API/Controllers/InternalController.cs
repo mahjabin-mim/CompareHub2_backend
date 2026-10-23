@@ -21,7 +21,7 @@ public class InternalController : ControllerBase
     }
 
     [HttpPost("price-check")]
-    public async Task<IActionResult> PriceCheck(CancellationToken cancellationToken)
+    public async Task<IActionResult> PriceCheck()
     {
         var expected = _configuration["Cron:Key"];
         if (string.IsNullOrWhiteSpace(expected))
@@ -35,7 +35,10 @@ public class InternalController : ControllerBase
             return Unauthorized(ApiResponse<string>.Fail("Invalid key."));
         }
 
-        var summary = await _priceCheckService.RunAsync(cancellationToken);
+        // The run must outlive a dropped connection (free hosts and proxies cut long requests), so it
+        // gets its own time limit instead of the request's cancellation.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        var summary = await _priceCheckService.RunAsync(timeout.Token);
         return Ok(ApiResponse<PriceCheckSummary>.Ok(summary));
     }
 }
