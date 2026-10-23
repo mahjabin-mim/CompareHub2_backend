@@ -27,6 +27,25 @@
 
 All local config lives in `CompareHub.Backend/app/Host/API/appsettings.json` — connection string, JWT issuer/audience/secret, and `Cors:AllowedOrigins` (defaults to `http://localhost:3000` for the frontend dev server). In production these are overridden by environment variables (see `Program.cs`) rather than editing this file.
 
+### Accounts, wishlist and alerts
+Sign-up/sign-in, Google sign-in, the wishlist, price history and price-drop alerts need a Postgres database and these
+settings (environment variables on the host; `__` separates levels):
+
+| Setting | Purpose |
+|---|---|
+| `ConnectionStrings__DefaultConnection` | Postgres, as `Host=...;Database=...;Username=...;Password=...;SSL Mode=Require` |
+| `Jwt__SecretKey` | Signs login tokens (Render generates one) |
+| `Cors__AllowedOrigins__0` | The website's address |
+| `App__FrontendUrl` | Website address used in alert emails |
+| `Email__User`, `Email__Password` | Gmail address and app password used to send alert emails |
+| `Push__PublicKey`, `Push__PrivateKey`, `Push__Subject` | VAPID keys for web push (`Subject` is `mailto:you@example.com`) |
+| `Cron__Key` | Shared secret for `POST /api/v1/internal/price-check` (header `X-Cron-Key`) |
+| `Google__ClientId` | Optional: enables "Continue with Google" (a Web client id from Google Cloud Console) |
+
+The free host sleeps when idle, so prices are rechecked by a scheduled GitHub Action
+(`.github/workflows/price-check.yml`, every 6 hours) that calls the endpoint above; it needs the repository secrets
+`BACKEND_URL` and `CRON_KEY`. A drop of at least 3% and ৳10 creates an in-app alert, an email and a web push.
+
 ## Tests
 
 ```
