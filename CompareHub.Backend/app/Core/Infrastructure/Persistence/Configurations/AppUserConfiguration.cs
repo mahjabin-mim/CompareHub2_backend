@@ -14,9 +14,12 @@ public class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
         builder.Property(x => x.Id).HasColumnName("id");
         builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(120).IsRequired();
         builder.Property(x => x.Email).HasColumnName("email").HasMaxLength(160).IsRequired();
-        builder.Property(x => x.PasswordHash).HasColumnName("password_hash").IsRequired();
+        builder.Property(x => x.PasswordHash).HasColumnName("password_hash");
+        builder.Property(x => x.GoogleSubject).HasColumnName("google_subject").HasMaxLength(64);
+        builder.Property(x => x.EmailAlertsEnabled).HasColumnName("email_alerts_enabled").HasDefaultValue(true).IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
 
         builder.HasIndex(x => x.Email).IsUnique();
+        builder.HasIndex(x => x.GoogleSubject).IsUnique();
     }
 }

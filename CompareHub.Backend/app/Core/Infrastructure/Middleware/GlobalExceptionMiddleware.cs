@@ -33,7 +33,7 @@ public class GlobalExceptionMiddleware
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             context.Response.ContentType = "application/json";
 
-            var payload = JsonSerializer.Serialize(ApiResponse<object>.Fail("An unexpected error occurred."));
+            var payload = JsonSerializer.Serialize(ApiResponse<object>.Fail("An unexpected error occurred."), new JsonSerializerOptions(JsonSerializerDefaults.Web));
             await context.Response.WriteAsync(payload);
         }
     }

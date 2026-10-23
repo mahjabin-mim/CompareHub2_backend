@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using CompareHub.Backend.app.Core.Modules.ProductDiscovery.DTOs;
 using CompareHub.Backend.app.Core.Modules.ProductDiscovery.Interfaces;
 using CompareHub.Backend.app.Core.Shared.Common;
@@ -50,6 +51,7 @@ public class ProductsController : ControllerBase
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting("search")]
     [HttpGet("search/public")]
     public async Task<IActionResult> SearchPublicSources([FromQuery] string query, CancellationToken cancellationToken)
     {
@@ -64,6 +66,7 @@ public class ProductsController : ControllerBase
 
     // Server-sent events: "start" lists the stores, then one "source" event per store as it finishes, then "done".
     [AllowAnonymous]
+    [EnableRateLimiting("search")]
     [HttpGet("search/public/stream")]
     public async Task StreamPublicSources([FromQuery] string query, CancellationToken cancellationToken)
     {

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,10 @@ using CompareHub.Backend.app.Core.Infrastructure.Middleware;
 using CompareHub.Backend.app.Core.Infrastructure.Persistence;
 using CompareHub.Backend.app.Core.Infrastructure.Persistence.Repositories;
 using CompareHub.Backend.app.Core.Infrastructure.Services;
+using CompareHub.Backend.app.Core.Modules.Alerts.Interfaces;
+using CompareHub.Backend.app.Core.Modules.Alerts.Services;
+using CompareHub.Backend.app.Core.Modules.Wishlist.Interfaces;
+using CompareHub.Backend.app.Core.Modules.Wishlist.Services;
 using CompareHub.Backend.app.Core.Modules.Auth.Interfaces;
 using CompareHub.Backend.app.Core.Modules.Auth.Services;
 using CompareHub.Backend.app.Core.Modules.ProductDiscovery.Interfaces;
@@ -53,6 +58,14 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddSingleton<IGoogleTokenVerifier, GoogleTokenVerifier>();
+builder.Services.AddHttpClient(GoogleTokenVerifier.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddScoped<IWishlistService, WishlistService>();
+builder.Services.AddScoped<IPriceCheckService, PriceCheckService>();
+builder.Services.AddScoped<IAlertNotifier, AlertNotifier>();
+builder.Services.AddScoped<PushSubscriptionService>();
+builder.Services.AddSingleton<IEmailSender, EmailSender>();
+builder.Services.AddSingleton<IPushSender, PushSender>();
 builder.Services.AddScoped<ISourceLinkService, SourceLinkService>();
 builder.Services.AddScoped<IProductSourceService, ProductSourceService>();
 builder.Services.AddScoped<IProductDiscoveryService, ProductDiscoveryService>();
@@ -114,6 +127,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync(
+            "{\"success\":false,\"message\":\"Too many requests. Please wait a minute and try again.\"}", token);
+    };
+
+    // Per client address: stops password guessing, and stops one visitor from fanning out
+    // hundreds of store requests a minute from the public search.
+    RateLimitPartition<string> PerClient(HttpContext context, int permitLimit) =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = permitLimit, Window = TimeSpan.FromMinutes(1) });
+    options.AddPolicy("auth", context => PerClient(context, 10));
+    options.AddPolicy("search", context => PerClient(context, 20));
+});
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(FrontendCorsPolicy, policy =>
@@ -147,6 +179,7 @@ forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 app.UseHttpsRedirection();
 app.UseCors(FrontendCorsPolicy);
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
