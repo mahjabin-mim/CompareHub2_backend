@@ -352,20 +352,19 @@ public class TheLiliumProductScraper : ProductSourceScraperBase
             return [];
         }
 
-        var enriched = new List<ProductResultDto>(baseResults.Count);
-        foreach (var product in baseResults)
+        // Fetch missing images in parallel; one at a time this cost up to N x the request timeout.
+        var enriched = await Task.WhenAll(baseResults.Select(async product =>
         {
             if (!NeedsImageEnrichment(product.ImageUrl))
             {
-                enriched.Add(product);
-                continue;
+                return product;
             }
 
             var imageUrl = await TryFetchOgImageAsync(product.ProductUrl, cancellationToken);
-            enriched.Add(string.IsNullOrWhiteSpace(imageUrl)
+            return string.IsNullOrWhiteSpace(imageUrl)
                 ? product
-                : product with { ImageUrl = imageUrl });
-        }
+                : product with { ImageUrl = imageUrl };
+        }));
 
         return ProductScraperHelpers.NormalizeResults(enriched, query, 30);
     }
@@ -678,21 +677,6 @@ public class AroggaProductScraper : ProductSourceScraperBase
             Logger.LogDebug(ex, "Unable to parse Arogga response.");
             return [];
         }
-    }
-}
-
-public class TheMartBangladeshTumblrProductScraper : ProductSourceScraperBase
-{
-    public TheMartBangladeshTumblrProductScraper(IHttpClientFactory httpClientFactory, ILogger<TheMartBangladeshTumblrProductScraper> logger)
-        : base(httpClientFactory, logger, "themartbangladesh.tumblr.com", "https://themartbangladesh.tumblr.com/")
-    {
-    }
-
-    protected override IEnumerable<Uri> BuildHtmlSearchUris(string query)
-    {
-        var encoded = Uri.EscapeDataString(query);
-        yield return new Uri($"https://themartbangladesh.tumblr.com/search/{encoded}");
-        yield return new Uri($"https://themartbangladesh.tumblr.com/tagged/{encoded}");
     }
 }
 

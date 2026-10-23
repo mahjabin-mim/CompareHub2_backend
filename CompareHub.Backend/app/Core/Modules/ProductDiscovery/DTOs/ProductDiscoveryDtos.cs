@@ -17,3 +17,7 @@ public record ProductSearchResponseDto(
     string Query,
     List<ProductResultDto> Results,
     List<ProductSourceCheckDto>? SourceChecks = null);
+
+public record PublicSourceResultDto(
+    string SourceWebsite,
+    List<ProductResultDto> Results);

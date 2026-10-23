@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CompareHub.Backend.app.Core.Modules.ProductDiscovery.DTOs;
 using CompareHub.Backend.app.Core.Modules.ProductDiscovery.Interfaces;
-using CompareHub.Backend.app.Core.Modules.ProductDiscovery.Services.Scrapers;
 using CompareHub.Backend.app.Core.Shared.Common;
 
 namespace CompareHub.Backend.app.Host.API.Controllers;
@@ -13,40 +13,20 @@ namespace CompareHub.Backend.app.Host.API.Controllers;
 public class ProductsController : ControllerBase
 {
     private const string KoreanMartBaseUrl = "https://koreanmartbd.com/";
-    private static readonly string[] PublicSourceUrls =
-    [
-        "https://kireibd.com/",
-        KoreanMartBaseUrl,
-        "https://shop.shajgoj.com/",
-        "https://groomlybd.com/",
-        "https://skincareshop.com.bd/",
-        "https://beautybooth.com.bd/",
-        "https://www.emartwayskincare.com.bd/",
-        "https://tekka.com.bd/",
-        "https://dhalishop.com/",
-        "https://thealamsbd.com/",
-        "https://www.thelilium.shop/",
-        "https://klassy.com.bd/",
-        "https://pixielabellabangladesh.com/",
-        "https://themartbangladesh.tumblr.com/",
-        "https://www.skinnora.com/",
-        "https://makeupchari.com/",
-        "https://perfectobd.com/",
-        "https://www.arogga.com/"
-    ];
+    private static readonly JsonSerializerOptions EventJsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IProductDiscoveryService _productDiscoveryService;
     private readonly IProductScraperService _productScraperService;
-    private readonly ILogger<ProductsController> _logger;
+    private readonly IPublicProductSearchService _publicProductSearchService;
 
     public ProductsController(
         IProductDiscoveryService productDiscoveryService,
         IProductScraperService productScraperService,
-        ILogger<ProductsController> logger)
+        IPublicProductSearchService publicProductSearchService)
     {
         _productDiscoveryService = productDiscoveryService;
         _productScraperService = productScraperService;
-        _logger = logger;
+        _publicProductSearchService = publicProductSearchService;
     }
 
     [HttpGet("search")]
@@ -78,46 +58,47 @@ public class ProductsController : ControllerBase
             return BadRequest(ApiResponse<string>.Fail("Search query is required."));
         }
 
-        var trimmedQuery = query.Trim();
-        var searchTasks = PublicSourceUrls.Select(async sourceUrl =>
-        {
-            try
-            {
-                var sourceResults = await _productScraperService.SearchProductsAsync(sourceUrl, trimmedQuery, cancellationToken);
-                return new PublicSourceSearchResult(sourceUrl, sourceResults);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Public source search failed for {SourceUrl}.", sourceUrl);
-                return new PublicSourceSearchResult(sourceUrl, []);
-            }
-        });
-
-        var sourceSearchResults = await Task.WhenAll(searchTasks);
-        var results = ProductScraperHelpers.NormalizeResults(
-            sourceSearchResults.SelectMany(x => x.Results),
-            trimmedQuery,
-            60);
-        var sourceChecks = sourceSearchResults
-            .Select(x => new ProductSourceCheckDto(
-                GetSourceWebsiteName(x.SourceUrl),
-                true,
-                x.Results.Count > 0,
-                x.Results.Count))
-            .ToList();
-
-        return Ok(ApiResponse<ProductSearchResponseDto>.Ok(new ProductSearchResponseDto(trimmedQuery, results, sourceChecks)));
+        var result = await _publicProductSearchService.SearchAsync(query, cancellationToken);
+        return Ok(ApiResponse<ProductSearchResponseDto>.Ok(result));
     }
 
-    private static string GetSourceWebsiteName(string sourceUrl)
+    // Server-sent events: "start" lists the stores, then one "source" event per store as it finishes, then "done".
+    [AllowAnonymous]
+    [HttpGet("search/public/stream")]
+    public async Task StreamPublicSources([FromQuery] string query, CancellationToken cancellationToken)
     {
-        if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+        if (string.IsNullOrWhiteSpace(query))
         {
-            return sourceUrl;
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            await Response.WriteAsJsonAsync(ApiResponse<string>.Fail("Search query is required."), cancellationToken);
+            return;
         }
 
-        return uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? uri.Host[4..] : uri.Host;
+        Response.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        // Stops reverse proxies from holding events back until the response ends.
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        try
+        {
+            await WriteEventAsync("start", new { Query = query.Trim(), Sources = _publicProductSearchService.SourceWebsites }, cancellationToken);
+            await foreach (var sourceResult in _publicProductSearchService.SearchBySourceAsync(query, cancellationToken))
+            {
+                await WriteEventAsync("source", sourceResult, cancellationToken);
+            }
+
+            await WriteEventAsync("done", new { }, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The visitor left or started a new search; the response has already started, so just stop.
+        }
     }
 
-    private sealed record PublicSourceSearchResult(string SourceUrl, List<ProductResultDto> Results);
+    private async Task WriteEventAsync<T>(string eventName, T data, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(data, EventJsonOptions);
+        await Response.WriteAsync($"event: {eventName}\ndata: {json}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
+    }
 }

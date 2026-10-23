@@ -6,6 +6,8 @@ namespace CompareHub.Backend.app.Core.Modules.ProductDiscovery.Services;
 
 public class WebsiteProductScraperService : IProductScraperService
 {
+    private static readonly TimeSpan StoreDeadline = TimeSpan.FromSeconds(10);
+
     private readonly IEnumerable<IProductSourceScraper> _sourceScrapers;
     private readonly ILogger<WebsiteProductScraperService> _logger;
 
@@ -31,12 +33,16 @@ public class WebsiteProductScraperService : IProductScraperService
             return [];
         }
 
+        // Caps a whole store, including chained requests, so one slow site can't hold up the search.
+        using var storeDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        storeDeadline.CancelAfter(StoreDeadline);
+
         try
         {
-            var results = await scraper.SearchAsync(query.Trim(), cancellationToken);
+            var results = await scraper.SearchAsync(query.Trim(), storeDeadline.Token);
             return ProductScraperHelpers.NormalizeResults(results, query, 30);
         }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogInformation(ex, "Product search timed out for {SourceName}.", scraper.SourceName);
             return [];

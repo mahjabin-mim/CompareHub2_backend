@@ -23,6 +23,10 @@ using CompareHub.Backend.app.Core.Modules.SourceLinks.Interfaces;
 using CompareHub.Backend.app.Core.Modules.SourceLinks.Services;
 using CompareHub.Backend.app.Core.Shared.Contracts;
 
+// A public search starts ~150 store requests at once and parses large HTML pages. The default
+// pool grows slowly, so finished responses sat queued until they hit the request timeout.
+ThreadPool.SetMinThreads(100, 100);
+
 var builder = WebApplication.CreateBuilder(args);
 const string FrontendCorsPolicy = "FrontendCorsPolicy";
 
@@ -60,6 +64,8 @@ builder.Services.AddScoped<IProductExtractionStrategy, JsonLdExtractionStrategy>
 builder.Services.AddScoped<IProductExtractionStrategy, HtmlSelectorExtractionStrategy>();
 builder.Services.AddScoped<IProductExtractionStrategy, PlaywrightExtractionStrategy>();
 builder.Services.AddScoped<IProductScraperService, WebsiteProductScraperService>();
+builder.Services.AddScoped<IPublicProductSearchService, PublicProductSearchService>();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IProductSourceScraper, KireiBdProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, KoreanMartProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, ShajgojProductScraper>();
@@ -73,14 +79,15 @@ builder.Services.AddScoped<IProductSourceScraper, TheAlamsProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, TheLiliumProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, KlassyProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, PixieLabellaProductScraper>();
-builder.Services.AddScoped<IProductSourceScraper, TheMartBangladeshTumblrProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, SkinnoraProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, MakeupChariProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, PerfectoBdProductScraper>();
 builder.Services.AddScoped<IProductSourceScraper, AroggaProductScraper>();
 builder.Services.AddHttpClient(ProductSourceScraperBase.HttpClientName, client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(12);
+    // Healthy stores answer in 1-3s but some spike past 5s; results stream in per store,
+    // so a slow store only delays its own results.
+    client.Timeout = TimeSpan.FromSeconds(8);
 });
 builder.Services.AddHttpClient("ProductExtractionClient", client =>
 {
@@ -152,9 +159,16 @@ if (!isEfDesignTime)
 {
     // Single free-tier instance, so applying pending migrations on boot is safe here;
     // revisit with a separate migration step if this ever runs multiple instances.
-    using (var scope = app.Services.CreateScope())
+    // Public search doesn't touch the database, so keep serving it if Postgres is unreachable
+    // instead of crash-looping on boot; auth and saved-source endpoints will report the failure.
+    try
     {
+        using var scope = app.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(ex, "Database migration failed on startup; continuing without the database.");
     }
 
     // Render (and most container hosts) assign the listen port via $PORT at runtime.

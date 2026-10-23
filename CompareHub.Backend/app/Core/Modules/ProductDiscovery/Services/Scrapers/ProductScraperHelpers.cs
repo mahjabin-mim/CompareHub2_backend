@@ -25,7 +25,7 @@ public static class ProductScraperHelpers
         ["eye"] = ["eye"]
     };
 
-    public static List<ProductResultDto> NormalizeResults(IEnumerable<ProductResultDto> results, string query, int maxResults)
+    public static List<ProductResultDto> NormalizeResults(IEnumerable<ProductResultDto> results, string query, int maxResults, bool relevantOnly = false)
     {
         var tokens = BuildQueryTokens(query);
         var scored = results
@@ -55,7 +55,8 @@ public static class ProductScraperHelpers
             .Where(x => tokens.Count <= 1 || x.Relevance >= 0.6m)
             .ToList();
 
-        var selected = relevant.Count > 0 ? relevant : scored;
+        // relevantOnly skips the fallback to unmatched products, for callers that merge results from many stores.
+        var selected = relevant.Count > 0 || relevantOnly ? relevant : scored;
         return selected
             .GroupBy(x => NormalizeUrlForGrouping(x.Product.ProductUrl), StringComparer.OrdinalIgnoreCase)
             .Select(x => x
