@@ -35,4 +35,4 @@ dotnet test tests/CompareHub.Backend.Tests/CompareHub.Backend.Tests.csproj
 
 ## Deployment
 
-Deploys to [Render](https://render.com) as a Docker web service + managed Postgres, defined in `render.yaml` and `Dockerfile` at the repo root. Render is configured to build from the `master` branch — merging `develop` into `master` and pushing triggers an automatic redeploy. See `render.yaml` for the environment variables that need to be set (`Cors__AllowedOrigins__0` should point at the deployed frontend URL).
+Deploys to [Render](https://render.com) as a Docker web service, defined in `render.yaml` and `Dockerfile` at the repo root. No database is provisioned: public search works without one, and `render.yaml` explains how to add a long-lived Postgres (e.g. Neon) when login is needed. Render is configured to build from the `master` branch — merging `develop` into `master` and pushing triggers an automatic redeploy. See `render.yaml` for the environment variables that need to be set (`Cors__AllowedOrigins__0` should point at the deployed frontend URL).

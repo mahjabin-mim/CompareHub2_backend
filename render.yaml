@@ -1,15 +1,6 @@
-databases:
-  # NOTE: Render's free Postgres plan is deleted 30 days after creation.
-  # Fine for testing this deploy; upgrade the plan (or point at a different
-  # Postgres host) before relying on it for real data.
-  - name: comparehub-db
-    plan: free
-    databaseName: comparehub
-    user: comparehub
-
 services:
   - type: web
-    name: comparehub-backend
+    name: comparehub2-backend
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -19,28 +10,12 @@ services:
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
-      # Npgsql needs keyword=value format, not Render's postgres:// URI, so the
-      # individual pieces are wired together into a connection string in Program.cs.
-      - key: DB_HOST
-        fromDatabase:
-          name: comparehub-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: comparehub-db
-          property: port
-      - key: DB_NAME
-        fromDatabase:
-          name: comparehub-db
-          property: database
-      - key: DB_USER
-        fromDatabase:
-          name: comparehub-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: comparehub-db
-          property: password
+      # No database is provisioned here: Render's free Postgres is deleted 30 days after
+      # creation, which took the first deployment down. Public search doesn't need one and
+      # the app starts without it. To enable login/saved sources, add a long-lived Postgres
+      # (e.g. Neon) in the dashboard as a keyword=value connection string:
+      #   ConnectionStrings__DefaultConnection =
+      #     Host=...;Database=...;Username=...;Password=...;SSL Mode=Require
       - key: Jwt__Issuer
         value: CompareHub
       - key: Jwt__Audience
@@ -50,4 +25,4 @@ services:
       # Add more Cors__AllowedOrigins__N entries for any additional origins
       # (e.g. a custom domain, or preview deployment URLs).
       - key: Cors__AllowedOrigins__0
-        value: https://comparehubfrontend.vercel.app
+        value: https://comparehub2.vercel.app
