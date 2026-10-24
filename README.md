@@ -25,7 +25,7 @@
 
 ## Configuration
 
-All local config lives in `CompareHub.Backend/app/Host/API/appsettings.json` — connection string, JWT issuer/audience/secret, and `Cors:AllowedOrigins` (defaults to `http://localhost:3000` for the frontend dev server). In production these are overridden by environment variables (see `Program.cs`) rather than editing this file.
+All local config lives in `CompareHub.Backend/app/Host/API/appsettings.json` — connection string, JWT issuer/audience/secret, and `Cors:AllowedOrigins` (defaults to `http://localhost:3107` for the frontend dev server). In production these are overridden by environment variables (see `Program.cs`) rather than editing this file.
 
 ### Accounts, wishlist and alerts
 Sign-up/sign-in, Google sign-in, the wishlist, price history and price-drop alerts need a Postgres database and these
