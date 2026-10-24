@@ -86,7 +86,7 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> LoginWithGoogleAsync(GoogleLoginRequestDto request, CancellationToken cancellationToken)
     {
-        var identity = await _googleTokenVerifier.VerifyAsync(request.IdToken, cancellationToken);
+        var identity = await _googleTokenVerifier.VerifyAsync(request.IdToken, request.Nonce, cancellationToken);
 
         var user = await _users.FirstOrDefaultAsync(new AppUserByGoogleSubjectSpecification(identity.Subject), cancellationToken)
             ?? await _users.FirstOrDefaultAsync(new AppUserByEmailSpecification(identity.Email), cancellationToken);

@@ -8,6 +8,7 @@ namespace CompareHub.Backend.Tests;
 public class GoogleTokenVerifierTests
 {
     private const string ClientId = "my-client.apps.googleusercontent.com";
+    private const string Nonce = "n-0123456789abcdef0123";
 
     private static GoogleTokenVerifier Verifier(string? clientId, HttpStatusCode status = HttpStatusCode.OK, string body = "{}")
     {
@@ -17,13 +18,13 @@ public class GoogleTokenVerifierTests
         return new GoogleTokenVerifier(configuration, new StubHttpClientFactory(status, body));
     }
 
-    private static string Claims(string aud = ClientId, string iss = "https://accounts.google.com", string verified = "true", string email = "Mim@Example.com") =>
-        $$"""{"aud":"{{aud}}","iss":"{{iss}}","email_verified":"{{verified}}","email":"{{email}}","sub":"1234","name":"Mim"}""";
+    private static string Claims(string aud = ClientId, string iss = "https://accounts.google.com", string verified = "true", string email = "Mim@Example.com", string nonce = Nonce) =>
+        $$"""{"aud":"{{aud}}","iss":"{{iss}}","email_verified":"{{verified}}","email":"{{email}}","sub":"1234","name":"Mim","nonce":"{{nonce}}"}""";
 
     [Fact]
     public async Task AValidTokenForThisAppYieldsTheIdentityWithALowercasedEmail()
     {
-        var identity = await Verifier(ClientId, body: Claims()).VerifyAsync("token", default);
+        var identity = await Verifier(ClientId, body: Claims()).VerifyAsync("token", Nonce, default);
 
         Assert.Equal(new("1234", "mim@example.com", "Mim"), identity);
     }
@@ -39,7 +40,7 @@ public class GoogleTokenVerifierTests
     [Fact]
     public async Task WithoutAClientIdItRefusesToSignAnyoneIn()
     {
-        var ex = await Assert.ThrowsAsync<ValidationException>(() => Verifier(null, body: Claims()).VerifyAsync("token", default));
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => Verifier(null, body: Claims()).VerifyAsync("token", Nonce, default));
         Assert.Contains("not set up", ex.Message);
     }
 
@@ -50,7 +51,25 @@ public class GoogleTokenVerifierTests
     public async Task ATokenForAnotherAppFromAnotherIssuerOrWithAnUnverifiedEmailIsRejected(string aud, string iss, string verified)
     {
         await Assert.ThrowsAsync<ValidationException>(() =>
-            Verifier(ClientId, body: Claims(aud, iss, verified)).VerifyAsync("token", default));
+            Verifier(ClientId, body: Claims(aud, iss, verified)).VerifyAsync("token", Nonce, default));
+    }
+
+    [Theory]
+    [InlineData("a-different-nonce-0123456789")]  // a token requested by some other sign-in
+    [InlineData("")]
+    public async Task ATokenThatDoesNotCarryThisSignInsNonceIsRejected(string tokenNonce)
+    {
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            Verifier(ClientId, body: Claims(nonce: tokenNonce)).VerifyAsync("token", Nonce, default));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("short")]
+    public async Task ASignInWithoutAProperNonceIsRejectedWithoutCallingGoogle(string nonce)
+    {
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            Verifier(ClientId, body: Claims(nonce: nonce)).VerifyAsync("token", nonce, default));
     }
 
     [Theory]
@@ -58,7 +77,7 @@ public class GoogleTokenVerifierTests
     [InlineData(HttpStatusCode.InternalServerError)]
     public async Task AnInvalidOrExpiredTokenIsRejected(HttpStatusCode status)
     {
-        await Assert.ThrowsAsync<ValidationException>(() => Verifier(ClientId, status).VerifyAsync("token", default));
+        await Assert.ThrowsAsync<ValidationException>(() => Verifier(ClientId, status).VerifyAsync("token", Nonce, default));
     }
 
     [Theory]
@@ -66,7 +85,7 @@ public class GoogleTokenVerifierTests
     [InlineData("   ")]
     public async Task AnEmptyTokenIsRejectedWithoutCallingGoogle(string token)
     {
-        await Assert.ThrowsAsync<ValidationException>(() => Verifier(ClientId, body: Claims()).VerifyAsync(token, default));
+        await Assert.ThrowsAsync<ValidationException>(() => Verifier(ClientId, body: Claims()).VerifyAsync(token, Nonce, default));
     }
 
     private sealed class StubHttpClientFactory(HttpStatusCode status, string body) : IHttpClientFactory

@@ -20,14 +20,14 @@ public class GoogleTokenVerifier : IGoogleTokenVerifier
     public string? ClientId { get; }
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ClientId);
 
-    public async Task<GoogleIdentity> VerifyAsync(string idToken, CancellationToken cancellationToken)
+    public async Task<GoogleIdentity> VerifyAsync(string idToken, string nonce, CancellationToken cancellationToken)
     {
         if (!IsConfigured)
         {
             throw new ValidationException("Google sign-in is not set up yet.");
         }
 
-        if (string.IsNullOrWhiteSpace(idToken) || idToken.Length > 4096)
+        if (string.IsNullOrWhiteSpace(idToken) || idToken.Length > 4096 || string.IsNullOrWhiteSpace(nonce) || nonce.Length is < 16 or > 200)
         {
             throw new ValidationException("Google sign-in failed. Please try again.");
         }
@@ -45,11 +45,14 @@ public class GoogleTokenVerifier : IGoogleTokenVerifier
         string Claim(string name) => claims.TryGetProperty(name, out var value) ? value.ToString() : string.Empty;
 
         var issuedForUs = Claim("aud") == ClientId;
+        // The browser chose the nonce before leaving for Google; a token that carries a different one was
+        // not requested by this sign-in attempt (for example a token captured from someone else's login).
+        var requestedByThisSignIn = Claim("nonce") == nonce;
         var validIssuer = ValidIssuers.Contains(Claim("iss"));
         var emailVerified = Claim("email_verified").Equals("true", StringComparison.OrdinalIgnoreCase);
         var email = Claim("email");
         var subject = Claim("sub");
-        if (!issuedForUs || !validIssuer || !emailVerified || email.Length == 0 || subject.Length == 0)
+        if (!issuedForUs || !requestedByThisSignIn || !validIssuer || !emailVerified || email.Length == 0 || subject.Length == 0)
         {
             throw new ValidationException("Google sign-in failed. Please try again.");
         }

@@ -73,8 +73,8 @@ public class AuthServiceTests
     {
         _google.Identity = new GoogleIdentity("sub-1", "new@b.com", "New User");
 
-        var first = await _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("token"), default);
-        var second = await _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("token"), default);
+        var first = await _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("token", "nonce-nonce-nonce-1234"), default);
+        var second = await _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("token", "nonce-nonce-nonce-1234"), default);
 
         Assert.Equal(first.UserId, second.UserId);
         Assert.Single(_users.Items);
@@ -88,7 +88,7 @@ public class AuthServiceTests
         var registered = await _service.RegisterAsync(new RegisterRequestDto("Mim", "mim@b.com", "longenough"), default);
         _google.Identity = new GoogleIdentity("sub-9", "mim@b.com", "Mim G");
 
-        var viaGoogle = await _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("token"), default);
+        var viaGoogle = await _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("token", "nonce-nonce-nonce-1234"), default);
 
         Assert.Equal(registered.UserId, viaGoogle.UserId);
         Assert.Equal("sub-9", _users.Items.Single().GoogleSubject);
@@ -100,7 +100,7 @@ public class AuthServiceTests
     {
         _google.Failure = new ValidationException("Google sign-in failed. Please try again.");
 
-        await Assert.ThrowsAsync<ValidationException>(() => _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("bad"), default));
+        await Assert.ThrowsAsync<ValidationException>(() => _service.LoginWithGoogleAsync(new GoogleLoginRequestDto("bad", "nonce-nonce-nonce-1234"), default));
         Assert.Empty(_users.Items);
     }
 
@@ -111,7 +111,7 @@ public class AuthServiceTests
         public bool IsConfigured => true;
         public string? ClientId => "client";
 
-        public Task<GoogleIdentity> VerifyAsync(string idToken, CancellationToken cancellationToken) =>
+        public Task<GoogleIdentity> VerifyAsync(string idToken, string nonce, CancellationToken cancellationToken) =>
             Failure is null ? Task.FromResult(Identity) : Task.FromException<GoogleIdentity>(Failure);
     }
 

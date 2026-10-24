@@ -7,6 +7,7 @@ public interface IGoogleTokenVerifier
     bool IsConfigured { get; }
     string? ClientId { get; }
 
-    // Throws ValidationException when the token is invalid, expired, unverified or issued for another app.
-    Task<GoogleIdentity> VerifyAsync(string idToken, CancellationToken cancellationToken);
+    // Throws ValidationException when the token is invalid, expired, unverified, issued for another app,
+    // or was not requested with this nonce (the random value the browser put in the sign-in request).
+    Task<GoogleIdentity> VerifyAsync(string idToken, string nonce, CancellationToken cancellationToken);
 }
